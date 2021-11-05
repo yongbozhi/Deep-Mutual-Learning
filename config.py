@@ -57,7 +57,7 @@ train_arg.add_argument('--gamma', type=float, default=0.1,
 
 # other params
 misc_arg = add_argument_group('Misc.')
-misc_arg.add_argument('--use_gpu', type=str2bool, default=True,
+misc_arg.add_argument('--use_gpu', type=str2bool, default=False,
                       help="Whether to run on the GPU")
 misc_arg.add_argument('--best', type=str2bool, default=False,
                       help='Load best model or most recent for testing')

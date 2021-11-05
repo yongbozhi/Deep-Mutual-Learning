@@ -16,9 +16,10 @@ from data_loader import get_test_loader, get_train_loader
 def main(config):
 
     # ensure directories are setup
+    #确保这两个目录能创建出来config.ckpt_dir, config.logs_dir
     prepare_dirs(config)
 
-    # ensure reproducibility
+    # ensure reproducibility再现性
     #torch.manual_seed(config.random_seed)
     kwargs = {}
     if config.use_gpu:
@@ -26,11 +27,11 @@ def main(config):
         kwargs = {'num_workers': config.num_workers, 'pin_memory': config.pin_memory}
         #torch.backends.cudnn.deterministic = True
         
-    # instantiate data loaders
+    # instantiate 实例化 data loaders
     test_data_loader = get_test_loader(
         config.data_dir, config.batch_size, **kwargs
     )
-    
+    # 训练时加载训练集和验证集，测试时加载测试集
     if config.is_train:
         train_data_loader = get_train_loader(
             config.data_dir, config.batch_size,
@@ -44,11 +45,12 @@ def main(config):
     trainer = Trainer(config, data_loader)
 
     # either train
+    #开始训练
     if config.is_train:
         save_config(config)
         trainer.train()
 
-    # or load a pretrained model and test
+    #开始测试 or load a pretrained model and test
     else:
         trainer.test()
 

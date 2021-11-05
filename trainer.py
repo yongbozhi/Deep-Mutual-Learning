@@ -25,10 +25,10 @@ from tensorboard_logger import configure, log_value
 class Trainer(object):
     """
     Trainer encapsulates all the logic necessary for
-    training the MobileNet Model.
+    training the MobileNet Model.Trainer封装了所有必要的逻辑培训MobileNet模型。
 
     All hyperparameters are provided by the user in the
-    config file.
+    config file.控件中的用户提供了所有超参数配置文件。
     """
     def __init__(self, config, data_loader):
         """
@@ -36,20 +36,22 @@ class Trainer(object):
 
         Args
         ----
-        - config: object containing command line arguments.
+        - config: object containing command line arguments.包含命令行参数的对象
         - data_loader: data iterator
         """
         self.config = config
 
         # data params
+        #训练时加载训练集和验证集，测试时加载测试集
         if config.is_train:
             self.train_loader = data_loader[0]
-            self.valid_loader = data_loader[1]
+            self.valid_loader = data_loader[1]    #验证集
             self.num_train = len(self.train_loader.dataset)
             self.num_valid = len(self.valid_loader.dataset)
         else:
             self.test_loader = data_loader
             self.num_test = len(self.test_loader.dataset)
+        #分类的类别数量
         self.num_classes = config.num_classes
 
         # training params
@@ -89,22 +91,23 @@ class Trainer(object):
             if not os.path.exists(tensorboard_dir):
                 os.makedirs(tensorboard_dir)
             configure(tensorboard_dir)
-
+        #Number of models to train for DML,初始化训练模型，model_num用于训练的模型的数量
         for i in range(self.model_num):
             # build models
             model = resnet32()
+            #若是有gpu就用gpu，可设置comfig里面的参数
             if self.use_gpu:
                 model.cuda()
-            
+            #models是一个列表
             self.models.append(model)
 
-            # initialize optimizer and scheduler
+            # initialize optimizer and scheduler 初始化优化器随机梯度下降法(SGD)https://zhuanlan.zhihu.com/p/367999849
             optimizer = optim.SGD(model.parameters(), lr=self.lr, momentum=self.momentum,
                                   weight_decay=self.weight_decay, nesterov=self.nesterov)
-            
+            #放置两个优化器
             self.optimizers.append(optimizer)
             
-            # set learning rate decay
+            # set learning rate decay设定学习率衰减
             scheduler = optim.lr_scheduler.StepLR(self.optimizers[i], step_size=60, gamma=self.gamma, last_epoch=-1)
             self.schedulers.append(scheduler)
 
@@ -118,8 +121,9 @@ class Trainer(object):
         A checkpoint of the model is saved after each epoch
         and if the validation accuracy is improved upon,
         a separate ckpt is created for use on the test set.
+        在每个epoch之后保存模型的一个检查点，如果验证精度得到提高，则创建一个单独的ckpt（保存模型的文件）用于测试集
         """
-        # load the most recent checkpoint
+        # load the most recent checkpoint加载最近的检查点
         if self.resume:
             self.load_checkpoint(best=False)
 
@@ -130,17 +134,17 @@ class Trainer(object):
         for epoch in range(self.start_epoch, self.epochs):
 
             for scheduler in self.schedulers:
-                scheduler.step(epoch)
+                scheduler.step(epoch)  #scheduler.step()是对lr（学习率）进行调整 https://blog.csdn.net/qq_20622615/article/details/83150963
             
             print(
                 '\nEpoch: {}/{} - LR: {:.6f}'.format(
                     epoch+1, self.epochs, self.optimizers[0].param_groups[0]['lr'],)
             )
 
-            # train for 1 epoch
+            # train for 1 epoch   训练一轮（将所有数据过一轮）https://blog.csdn.net/weixin_42137700/article/details/84302045
             train_losses, train_accs = self.train_one_epoch(epoch)
 
-            # evaluate on validation set
+            # evaluate on validation set对验证集进行评估
             valid_losses, valid_accs = self.validate(epoch)
 
             for i in range(self.model_num):
@@ -174,46 +178,49 @@ class Trainer(object):
 
         An epoch corresponds to one full pass through the entire
         training set in successive mini-batches.
-
+        一个epoch相当于整个过程的一次完整穿越连续的小批量训练集
         This is used by train() and should not be called manually.
         """
+        #在train函数中采用自定义的AverageMeter类来管理一些变量的更新。
         batch_time = AverageMeter()
         losses = []
         accs = []
 
         for i in range(self.model_num):
-            self.models[i].train()
+            self.models[i].train()  #设置为训练模式
             losses.append(AverageMeter())
             accs.append(AverageMeter())
 
         
-        tic = time.time()
-        with tqdm(total=self.num_train) as pbar:
+        tic = time.time()   #返回时间
+        with tqdm(total=self.num_train) as pbar:   #num_train 训练集的长度
             for i, (images, labels) in enumerate(self.train_loader):
                 if self.use_gpu:
                     images, labels = images.cuda(), labels.cuda()
                 images, labels = Variable(images), Variable(labels)
                 
-                #forward pass
+                #forward pass  前向传播
                 outputs=[]
-                for model in self.models:
-                    outputs.append(model(images))
+                for model in self.models:  #遍历两个模型
+                    outputs.append(model(images)) #出入到两个模型中，输出放到outputs
                 for i in range(self.model_num):
-                    ce_loss = self.loss_ce(outputs[i], labels)
+                    ce_loss = self.loss_ce(outputs[i], labels) #求一个模型的交叉熵损失
+                    #求别的模型相对于这个模型的KL散度
                     kl_loss = 0
                     for j in range(self.model_num):
                         if i!=j:
                             kl_loss += self.loss_kl(F.log_softmax(outputs[i], dim = 1), 
                                                     F.softmax(Variable(outputs[j]), dim=1))
+                    #得到总体的损失
                     loss = ce_loss + kl_loss / (self.model_num - 1)
                     
-                    # measure accuracy and record loss
+                    # measure accuracy and record loss测量准确率和损失
                     prec = accuracy(outputs[i].data, labels.data, topk=(1,))[0]
                     losses[i].update(loss.item(), images.size()[0])
                     accs[i].update(prec.item(), images.size()[0])
                 
 
-                    # compute gradients and update SGD
+                    # compute gradients and update SGD计算梯度和更新SGD（梯度下降）
                     self.optimizers[i].zero_grad()
                     loss.backward()
                     self.optimizers[i].step()
